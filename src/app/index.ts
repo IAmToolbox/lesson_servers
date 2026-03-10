@@ -9,15 +9,16 @@ type Middleware = (req: Request, res: Response, next: Function) => void;
 const app = express();
 const PORT = 8080;
 
-
-app.get("/healthz", (req: Request, res: Response) => {
+app.use(express.json());
+app.use(middlewareLogResponses);
+app.get("/api/healthz", (req: Request, res: Response) => {
     res.set("Content-Type", "text/plain; charset=utf-8");
     res.send("OK");
 });
-app.get("/metrics", middlewareMetricsLog);
-app.get("/reset", middlewareMetricsReset);
+app.post("/api/validate_chirp", handlerValidateChirp);
+app.get("/admin/metrics", middlewareMetricsLog);
+app.post("/admin/reset", middlewareMetricsReset);
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
-app.use(middlewareLogResponses);
 
 app.listen(PORT, () => {
     console.log(`Server is running at http://localhost:${PORT}`);
@@ -39,7 +40,9 @@ function middlewareMetricsInc(req: Request, res: Response, next: Function) {
 }
 
 function middlewareMetricsLog(req: Request, res: Response, next: Function) {
-    res.send(`Hits: ${config.fileserverHits}`);
+    //res.send(`Hits: ${config.fileserverHits}`);
+    res.set("Content-Type", "text/html; charset=utf-8");
+    res.send(`<h1>Welcome, Chirpy Admin</h1>\n<p>Chirpy has been visited ${config.fileserverHits} times!</p>`);
     next();
 }
 
@@ -47,4 +50,37 @@ function middlewareMetricsReset(req: Request, res: Response, next: Function) {
     config.fileserverHits = 0;
     res.send("Hits Reset");
     next();
+}
+
+function handlerValidateChirp(req: Request, res: Response) {
+    try {
+        const parsedBody = req.body;
+        if (parsedBody.body.length > 140) {
+            throw new Error("Chirp is too long");
+        }
+
+        // Because this is a good Christian Twitter ripoff here's the logic to remove the nasty words
+        const splitChirp = parsedBody.body.split(" ");
+        const lowerChirp = splitChirp.map((word: string) => word.toLowerCase());
+        if (lowerChirp.includes("kerfuffle") || lowerChirp.includes("sharbert") || lowerChirp.includes("fornax")) {
+            const nastyIndices = [lowerChirp.indexOf("kerfuffle"), lowerChirp.indexOf("sharbert"), lowerChirp.indexOf("fornax")];
+            for (let i of nastyIndices) {
+                if (i === -1) {
+                    continue;
+                }
+                splitChirp[i] = "****";
+            }
+        }
+        const cleanChirp = splitChirp.join(" ");
+
+        const okResponse = {
+            cleanedBody: cleanChirp
+        };
+        res.status(200).json(okResponse);
+    } catch (err) {
+        const errResponse = {
+            error: "Chirp is too long"
+        };
+        res.status(400).json(errResponse);
+    }
 }
