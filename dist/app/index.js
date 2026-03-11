@@ -1,6 +1,27 @@
 // Learning servers on Boot.dev oh me oh my
 import express from "express";
 import { config } from "../config.js";
+// Custom error definitions go here
+class BadRequestError extends Error {
+    constructor(message) {
+        super(message);
+    }
+}
+class UnauthorizedError extends Error {
+    constructor(message) {
+        super(message);
+    }
+}
+class ForbiddenError extends Error {
+    constructor(message) {
+        super(message);
+    }
+}
+class NotFoundError extends Error {
+    constructor(message) {
+        super(message);
+    }
+}
 const app = express();
 const PORT = 8080;
 app.use(express.json());
@@ -13,6 +34,7 @@ app.post("/api/validate_chirp", handlerValidateChirp);
 app.get("/admin/metrics", middlewareMetricsLog);
 app.post("/admin/reset", middlewareMetricsReset);
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
+app.use(errorHandler);
 app.listen(PORT, () => {
     console.log(`Server is running at http://localhost:${PORT}`);
 });
@@ -41,33 +63,40 @@ function middlewareMetricsReset(req, res, next) {
     next();
 }
 function handlerValidateChirp(req, res) {
-    try {
-        const parsedBody = req.body;
-        if (parsedBody.body.length > 140) {
-            throw new Error("Chirp is too long");
-        }
-        // Because this is a good Christian Twitter ripoff here's the logic to remove the nasty words
-        const splitChirp = parsedBody.body.split(" ");
-        const lowerChirp = splitChirp.map((word) => word.toLowerCase());
-        if (lowerChirp.includes("kerfuffle") || lowerChirp.includes("sharbert") || lowerChirp.includes("fornax")) {
-            const nastyIndices = [lowerChirp.indexOf("kerfuffle"), lowerChirp.indexOf("sharbert"), lowerChirp.indexOf("fornax")];
-            for (let i of nastyIndices) {
-                if (i === -1) {
-                    continue;
-                }
-                splitChirp[i] = "****";
-            }
-        }
-        const cleanChirp = splitChirp.join(" ");
-        const okResponse = {
-            cleanedBody: cleanChirp
-        };
-        res.status(200).json(okResponse);
+    //try {
+    const parsedBody = req.body;
+    if (parsedBody.body.length > 140) {
+        throw new BadRequestError("Chirp is too long. Max length is 140");
     }
-    catch (err) {
-        const errResponse = {
-            error: "Chirp is too long"
-        };
-        res.status(400).json(errResponse);
+    // Because this is a good Christian Twitter ripoff here's the logic to remove the nasty words
+    const splitChirp = parsedBody.body.split(" ");
+    const lowerChirp = splitChirp.map((word) => word.toLowerCase());
+    if (lowerChirp.includes("kerfuffle") || lowerChirp.includes("sharbert") || lowerChirp.includes("fornax")) {
+        const nastyIndices = [lowerChirp.indexOf("kerfuffle"), lowerChirp.indexOf("sharbert"), lowerChirp.indexOf("fornax")];
+        for (let i of nastyIndices) {
+            if (i === -1) {
+                continue;
+            }
+            splitChirp[i] = "****";
+        }
+    }
+    const cleanChirp = splitChirp.join(" ");
+    const okResponse = {
+        cleanedBody: cleanChirp
+    };
+    res.status(200).json(okResponse);
+    //} catch (err) {
+    /*const errResponse = {
+        error: "Chirp is too long"
+    };
+    res.status(400).json(errResponse);*/
+    //}
+}
+function errorHandler(err, req, res, next) {
+    if (err instanceof BadRequestError) {
+        console.log(err);
+        res.status(400).json({
+            error: err.message
+        });
     }
 }
