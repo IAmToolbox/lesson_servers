@@ -3,6 +3,7 @@
 import express from "express";
 import { Request, Response } from "express";
 import { config } from "../config.js";
+import { createUser, resetUsers } from "../db/queries/users.js"
 
 type Middleware = (req: Request, res: Response, next: Function) => void;
 
@@ -42,6 +43,7 @@ app.get("/api/healthz", (req: Request, res: Response) => {
     res.send("OK");
 });
 app.post("/api/validate_chirp", handlerValidateChirp);
+app.post("/api/users", handlerAddUser);
 app.get("/admin/metrics", middlewareMetricsLog);
 app.post("/admin/reset", middlewareMetricsReset);
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
@@ -73,10 +75,18 @@ function middlewareMetricsLog(req: Request, res: Response, next: Function) {
     next();
 }
 
-function middlewareMetricsReset(req: Request, res: Response, next: Function) {
-    config.fileserverHits = 0;
-    res.send("Hits Reset");
-    next();
+async function middlewareMetricsReset(req: Request, res: Response, next: Function) {
+    try {
+        if (config.platform !== "dev") {
+            throw new ForbiddenError("Endpoint only available for development environment");
+        }
+        config.fileserverHits = 0;
+        await resetUsers();
+        res.send("Hits and User Database Reset");
+        next();
+    } catch (err) {
+        next(err);
+    }
 }
 
 function handlerValidateChirp(req: Request, res: Response) {
@@ -112,10 +122,22 @@ function handlerValidateChirp(req: Request, res: Response) {
     //}
 }
 
+async function handlerAddUser(req: Request, res: Response, next: Function) {
+    const parsedBody = req.body; // Will receive an email
+    const createdUser = await createUser({ email: parsedBody.email });
+    res.status(201).json(createdUser);
+}
+
 function errorHandler(err: Error, req: Request, res: Response, next: Function) {
     if (err instanceof BadRequestError) {
-        console.log(err)
+        console.log(err);
         res.status(400).json({
+            error: err.message
+        });
+    }
+    if (err instanceof ForbiddenError) {
+        console.log(err);
+        res.status(403).json({
             error: err.message
         });
     }

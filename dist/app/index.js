@@ -1,6 +1,7 @@
 // Learning servers on Boot.dev oh me oh my
 import express from "express";
 import { config } from "../config.js";
+import { createUser, resetUsers } from "../db/queries/users.js";
 // Custom error definitions go here
 class BadRequestError extends Error {
     constructor(message) {
@@ -31,6 +32,7 @@ app.get("/api/healthz", (req, res) => {
     res.send("OK");
 });
 app.post("/api/validate_chirp", handlerValidateChirp);
+app.post("/api/users", handlerAddUser);
 app.get("/admin/metrics", middlewareMetricsLog);
 app.post("/admin/reset", middlewareMetricsReset);
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
@@ -57,10 +59,19 @@ function middlewareMetricsLog(req, res, next) {
     res.send(`<h1>Welcome, Chirpy Admin</h1>\n<p>Chirpy has been visited ${config.fileserverHits} times!</p>`);
     next();
 }
-function middlewareMetricsReset(req, res, next) {
-    config.fileserverHits = 0;
-    res.send("Hits Reset");
-    next();
+async function middlewareMetricsReset(req, res, next) {
+    try {
+        if (config.platform !== "dev") {
+            throw new ForbiddenError("Endpoint only available for development environment");
+        }
+        config.fileserverHits = 0;
+        await resetUsers();
+        res.send("Hits and User Database Reset");
+        next();
+    }
+    catch (err) {
+        next(err);
+    }
 }
 function handlerValidateChirp(req, res) {
     //try {
@@ -92,10 +103,21 @@ function handlerValidateChirp(req, res) {
     res.status(400).json(errResponse);*/
     //}
 }
+async function handlerAddUser(req, res, next) {
+    const parsedBody = req.body; // Will receive an email
+    const createdUser = await createUser({ email: parsedBody.email });
+    res.status(201).json(createdUser);
+}
 function errorHandler(err, req, res, next) {
     if (err instanceof BadRequestError) {
         console.log(err);
         res.status(400).json({
+            error: err.message
+        });
+    }
+    if (err instanceof ForbiddenError) {
+        console.log(err);
+        res.status(403).json({
             error: err.message
         });
     }
