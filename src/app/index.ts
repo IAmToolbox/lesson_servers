@@ -4,6 +4,7 @@ import express from "express";
 import { Request, Response } from "express";
 import { config } from "../config.js";
 import { createUser, resetUsers } from "../db/queries/users.js"
+import { createNewChirp } from "../db/queries/chirps.js";
 
 type Middleware = (req: Request, res: Response, next: Function) => void;
 
@@ -42,7 +43,7 @@ app.get("/api/healthz", (req: Request, res: Response) => {
     res.set("Content-Type", "text/plain; charset=utf-8");
     res.send("OK");
 });
-app.post("/api/validate_chirp", handlerValidateChirp);
+app.post("/api/chirps", handlerAddNewChirp);
 app.post("/api/users", handlerAddUser);
 app.get("/admin/metrics", middlewareMetricsLog);
 app.post("/admin/reset", middlewareMetricsReset);
@@ -56,7 +57,7 @@ app.listen(PORT, () => {
 function middlewareLogResponses(req: Request, res: Response, next: Function) {
     res.on("finish", () => {
         const status = res.statusCode
-        if (status !== 200) {
+        if (status < 200 && status >= 300) {
             console.log(`[NON-OK] ${req.method} ${req.originalUrl} - Status: ${status}`);
         }
     });
@@ -89,43 +90,41 @@ async function middlewareMetricsReset(req: Request, res: Response, next: Functio
     }
 }
 
-function handlerValidateChirp(req: Request, res: Response) {
-    //try {
-    const parsedBody = req.body;
-    if (parsedBody.body.length > 140) {
-        throw new BadRequestError("Chirp is too long. Max length is 140");
-    }
-
-    // Because this is a good Christian Twitter ripoff here's the logic to remove the nasty words
-    const splitChirp = parsedBody.body.split(" ");
-    const lowerChirp = splitChirp.map((word: string) => word.toLowerCase());
-    if (lowerChirp.includes("kerfuffle") || lowerChirp.includes("sharbert") || lowerChirp.includes("fornax")) {
-        const nastyIndices = [lowerChirp.indexOf("kerfuffle"), lowerChirp.indexOf("sharbert"), lowerChirp.indexOf("fornax")];
-        for (let i of nastyIndices) {
-            if (i === -1) {
-                continue;
-            }
-            splitChirp[i] = "****";
-        }
-    }
-    const cleanChirp = splitChirp.join(" ");
-
-    const okResponse = {
-        cleanedBody: cleanChirp
-    };
-    res.status(200).json(okResponse);
-    //} catch (err) {
-        /*const errResponse = {
-            error: "Chirp is too long"
-        };
-        res.status(400).json(errResponse);*/
-    //}
-}
-
 async function handlerAddUser(req: Request, res: Response, next: Function) {
     const parsedBody = req.body; // Will receive an email
     const createdUser = await createUser({ email: parsedBody.email });
     res.status(201).json(createdUser);
+}
+
+async function handlerAddNewChirp(req: Request, res: Response, next: Function) {
+    const parsedBody = req.body; // Will receive a chirp and the user ID of the poster
+    try {
+        // Validation logic
+        if (parsedBody.body.length > 140) {
+            throw new BadRequestError("Chirp is too long. Max length is 140");
+        }
+
+        // Because this is a good Christian Twitter ripoff here's the logic to remove the nasty words
+        const splitChirp = parsedBody.body.split(" ");
+        const lowerChirp = splitChirp.map((word: string) => word.toLowerCase());
+        if (lowerChirp.includes("kerfuffle") || lowerChirp.includes("sharbert") || lowerChirp.includes("fornax")) {
+            const nastyIndices = [lowerChirp.indexOf("kerfuffle"), lowerChirp.indexOf("sharbert"), lowerChirp.indexOf("fornax")];
+            for (let i of nastyIndices) {
+                if (i === -1) {
+                    continue;
+                }
+                splitChirp[i] = "****";
+            }
+        }
+        const cleanChirp = splitChirp.join(" ");
+
+        const createdChirp = await createNewChirp({ body: cleanChirp, userId: parsedBody.userId });
+        res.status(201).json(createdChirp);
+        next();
+    } catch (err) {
+        next(err);
+    }
+
 }
 
 function errorHandler(err: Error, req: Request, res: Response, next: Function) {
