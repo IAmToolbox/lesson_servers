@@ -4,7 +4,7 @@ import express from "express";
 import { Request, Response } from "express";
 import { config } from "../config.js";
 import { createUser, resetUsers } from "../db/queries/users.js"
-import { createNewChirp } from "../db/queries/chirps.js";
+import { createNewChirp, getAllChirps, getChirpById } from "../db/queries/chirps.js";
 
 type Middleware = (req: Request, res: Response, next: Function) => void;
 
@@ -44,6 +44,8 @@ app.get("/api/healthz", (req: Request, res: Response) => {
     res.send("OK");
 });
 app.post("/api/chirps", handlerAddNewChirp);
+app.get("/api/chirps", handlerGetAllChirps);
+app.get("/api/chirps/:chirpId", handlerGetChirpById);
 app.post("/api/users", handlerAddUser);
 app.get("/admin/metrics", middlewareMetricsLog);
 app.post("/admin/reset", middlewareMetricsReset);
@@ -127,6 +129,33 @@ async function handlerAddNewChirp(req: Request, res: Response, next: Function) {
 
 }
 
+async function handlerGetAllChirps(req: Request, res: Response, next: Function) {
+    try {
+        const chirps = await getAllChirps();
+        res.status(200).json(chirps);
+        next();
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function handlerGetChirpById(req: Request, res: Response, next: Function) {
+    const { chirpId } = req.params;
+    // Explicit type guard needed
+    if (typeof chirpId !== "string") {
+        throw new BadRequestError("Invalid chirp ID");
+    }
+    try {
+        const chirp = await getChirpById(chirpId);
+        if (!chirp) {
+            throw new NotFoundError("Chirp not found");
+        }
+        res.status(200).json(chirp);
+    } catch (err) {
+        next(err);
+    }
+}
+
 function errorHandler(err: Error, req: Request, res: Response, next: Function) {
     if (err instanceof BadRequestError) {
         console.log(err);
@@ -137,6 +166,12 @@ function errorHandler(err: Error, req: Request, res: Response, next: Function) {
     if (err instanceof ForbiddenError) {
         console.log(err);
         res.status(403).json({
+            error: err.message
+        });
+    }
+    if (err instanceof NotFoundError) {
+        console.log(err);
+        res.status(404).json({
             error: err.message
         });
     }
