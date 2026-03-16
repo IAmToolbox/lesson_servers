@@ -1,7 +1,8 @@
 // Learning servers on Boot.dev oh me oh my
 import express from "express";
 import { config } from "../config.js";
-import { createUser, resetUsers } from "../db/queries/users.js";
+import { hashPassword, checkPasswordHash } from "./auth.js";
+import { createUser, getUserByEmail, resetUsers } from "../db/queries/users.js";
 import { createNewChirp, getAllChirps, getChirpById } from "../db/queries/chirps.js";
 // Custom error definitions go here
 class BadRequestError extends Error {
@@ -36,6 +37,7 @@ app.post("/api/chirps", handlerAddNewChirp);
 app.get("/api/chirps", handlerGetAllChirps);
 app.get("/api/chirps/:chirpId", handlerGetChirpById);
 app.post("/api/users", handlerAddUser);
+app.post("/api/login", handlerLogin);
 app.get("/admin/metrics", middlewareMetricsLog);
 app.post("/admin/reset", middlewareMetricsReset);
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
@@ -77,9 +79,40 @@ async function middlewareMetricsReset(req, res, next) {
     }
 }
 async function handlerAddUser(req, res, next) {
-    const parsedBody = req.body; // Will receive an email
-    const createdUser = await createUser({ email: parsedBody.email });
-    res.status(201).json(createdUser);
+    const parsedBody = req.body; // Will receive an email and a password.
+    try {
+        // MAKE SURE TO ALWAYS HASH THE PASSWORD BEFORE ADDING THE NEW USER
+        const hashedPassword = await hashPassword(parsedBody.password);
+        const createdUser = await createUser({ email: parsedBody.email, hashedPassword: hashedPassword });
+        res.status(201).json(createdUser);
+    }
+    catch (err) {
+        next(err);
+    }
+}
+async function handlerLogin(req, res, next) {
+    const parsedBody = req.body;
+    try {
+        const user = await getUserByEmail(parsedBody.email);
+        if (user === undefined) {
+            throw new UnauthorizedError("Incorrect email or password");
+        }
+        if (await checkPasswordHash(parsedBody.password, user.hashedPassword)) {
+            const userResponse = {
+                id: user.id,
+                createdAt: user.createdAt,
+                updatedAt: user.updatedAt,
+                email: user.email,
+            };
+            res.status(200).json(userResponse);
+        }
+        else {
+            throw new UnauthorizedError("Incorrect email or password");
+        }
+    }
+    catch (err) {
+        next(err);
+    }
 }
 async function handlerAddNewChirp(req, res, next) {
     const parsedBody = req.body; // Will receive a chirp and the user ID of the poster
@@ -140,6 +173,12 @@ function errorHandler(err, req, res, next) {
     if (err instanceof BadRequestError) {
         console.log(err);
         res.status(400).json({
+            error: err.message
+        });
+    }
+    if (err instanceof UnauthorizedError) {
+        console.log(err);
+        res.status(401).json({
             error: err.message
         });
     }
