@@ -1,7 +1,7 @@
 // Learning servers on Boot.dev oh me oh my
 import express from "express";
 import { config } from "../config.js";
-import { hashPassword, checkPasswordHash } from "./auth.js";
+import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken } from "./auth.js";
 import { createUser, getUserByEmail, resetUsers } from "../db/queries/users.js";
 import { createNewChirp, getAllChirps, getChirpById } from "../db/queries/chirps.js";
 // Custom error definitions go here
@@ -91,18 +91,25 @@ async function handlerAddUser(req, res, next) {
     }
 }
 async function handlerLogin(req, res, next) {
-    const parsedBody = req.body;
+    const parsedBody = req.body; // Will receive an email and a password, with an optional expiration time for the JWT token.
     try {
         const user = await getUserByEmail(parsedBody.email);
         if (user === undefined) {
             throw new UnauthorizedError("Incorrect email or password");
         }
         if (await checkPasswordHash(parsedBody.password, user.hashedPassword)) {
+            // Check if the request included an expiresInSeconds field
+            let expiresIn = 3600;
+            if (Object.keys(parsedBody).includes("expiresInSeconds") && parsedBody.expiresInSeconds <= expiresIn) {
+                expiresIn = parsedBody.expiresInSeconds;
+            }
+            const token = makeJWT(user.id, expiresIn, config.secret);
             const userResponse = {
                 id: user.id,
                 createdAt: user.createdAt,
                 updatedAt: user.updatedAt,
                 email: user.email,
+                token: token,
             };
             res.status(200).json(userResponse);
         }
@@ -115,8 +122,17 @@ async function handlerLogin(req, res, next) {
     }
 }
 async function handlerAddNewChirp(req, res, next) {
-    const parsedBody = req.body; // Will receive a chirp and the user ID of the poster
+    const parsedBody = req.body; // Will receive a chirp. The Authorization header will have a bearer token. Extract the user ID from that
     try {
+        let userId = "";
+        try {
+            const token = getBearerToken(req);
+            userId = validateJWT(token, config.secret);
+        }
+        catch (err) {
+            console.log(err);
+            throw new UnauthorizedError("Session expired. Please log in again");
+        }
         // Validation logic
         if (parsedBody.body.length > 140) {
             throw new BadRequestError("Chirp is too long. Max length is 140");
@@ -134,7 +150,7 @@ async function handlerAddNewChirp(req, res, next) {
             }
         }
         const cleanChirp = splitChirp.join(" ");
-        const createdChirp = await createNewChirp({ body: cleanChirp, userId: parsedBody.userId });
+        const createdChirp = await createNewChirp({ body: cleanChirp, userId: userId });
         res.status(201).json(createdChirp);
         next();
     }

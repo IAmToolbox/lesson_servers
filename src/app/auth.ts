@@ -2,6 +2,7 @@
 
 import * as argon2 from "argon2";
 import jwt from "jsonwebtoken";
+import { Request } from "express";
 import type { JwtPayload } from "jsonwebtoken";
 
 type Payload = Pick<JwtPayload, "iss" | "sub" | "iat" | "exp">;
@@ -42,8 +43,23 @@ export function makeJWT(userId: string, expiresIn: number, secret: string): stri
 export function validateJWT(tokenString: string, secret: string): string {
     try {
         const decoded = jwt.verify(tokenString, secret);
-        return decoded.sub;
+        if (typeof decoded.sub === "string"){
+            return decoded.sub;
+        } else {
+            throw new Error("sub field is undefined");
+        }
     } catch (err) {
         throw new Error("JWT was not validated");
     }
+}
+
+export function getBearerToken(req: Request): string {
+    const authHeader = req.get('Authorization');
+    if (authHeader === undefined) {
+        throw new Error(`Authorization header missing/malformed: ${authHeader}`);
+    }
+    const headerParts = authHeader.split(" ");
+
+
+    return headerParts[1];
 }
