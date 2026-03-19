@@ -1,9 +1,10 @@
 // Learning servers on Boot.dev oh me oh my
 import express from "express";
 import { config } from "../config.js";
-import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken } from "./auth.js";
+import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken, makeRefreshToken } from "./auth.js";
 import { createUser, getUserByEmail, resetUsers } from "../db/queries/users.js";
 import { createNewChirp, getAllChirps, getChirpById } from "../db/queries/chirps.js";
+import { createRefreshToken, getRefreshTokenById, revokeToken } from "../db/queries/refresh_tokens.js";
 // Custom error definitions go here
 class BadRequestError extends Error {
     constructor(message) {
@@ -38,6 +39,8 @@ app.get("/api/chirps", handlerGetAllChirps);
 app.get("/api/chirps/:chirpId", handlerGetChirpById);
 app.post("/api/users", handlerAddUser);
 app.post("/api/login", handlerLogin);
+app.post("/api/refresh", handlerRefreshUser);
+app.post("/api/revoke", handlerRevokeToken);
 app.get("/admin/metrics", middlewareMetricsLog);
 app.post("/admin/reset", middlewareMetricsReset);
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
@@ -72,7 +75,6 @@ async function middlewareMetricsReset(req, res, next) {
         config.fileserverHits = 0;
         await resetUsers();
         res.send("Hits and User Database Reset");
-        next();
     }
     catch (err) {
         next(err);
@@ -91,25 +93,29 @@ async function handlerAddUser(req, res, next) {
     }
 }
 async function handlerLogin(req, res, next) {
-    const parsedBody = req.body; // Will receive an email and a password, with an optional expiration time for the JWT token.
+    const parsedBody = req.body; // Will receive an email and a password
     try {
         const user = await getUserByEmail(parsedBody.email);
         if (user === undefined) {
             throw new UnauthorizedError("Incorrect email or password");
         }
         if (await checkPasswordHash(parsedBody.password, user.hashedPassword)) {
-            // Check if the request included an expiresInSeconds field
-            let expiresIn = 3600;
-            if (Object.keys(parsedBody).includes("expiresInSeconds") && parsedBody.expiresInSeconds <= expiresIn) {
-                expiresIn = parsedBody.expiresInSeconds;
-            }
-            const token = makeJWT(user.id, expiresIn, config.secret);
+            const accessExpiresIn = 3600;
+            const refreshExpiresIn = 5184000 * 1000; // This should be 60 days
+            const accessToken = makeJWT(user.id, accessExpiresIn, config.secret);
+            const refreshToken = await createRefreshToken({
+                token: makeRefreshToken(),
+                userId: user.id,
+                expiresAt: new Date(Date.now() + refreshExpiresIn), // If I set it up right the constructor should get a UNIX epoch millisecond representation of the date 60 days from now
+                revokedAt: null, // Can't revoke a token we *just* created
+            });
             const userResponse = {
                 id: user.id,
                 createdAt: user.createdAt,
                 updatedAt: user.updatedAt,
                 email: user.email,
-                token: token,
+                token: accessToken,
+                refreshToken: refreshToken.token,
             };
             res.status(200).json(userResponse);
         }
@@ -121,18 +127,44 @@ async function handlerLogin(req, res, next) {
         next(err);
     }
 }
+async function handlerRefreshUser(req, res, next) {
+    // Will not receive a body, but will have an Authorization header
+    try {
+        const refreshTokenId = getBearerToken(req);
+        const refreshToken = await getRefreshTokenById(refreshTokenId);
+        if (refreshToken === undefined || refreshToken.expiresAt.getTime() < Date.now() || refreshToken.revokedAt !== null) {
+            throw new UnauthorizedError("Session has expired or has been revoked. Please log in again");
+        }
+        const accessExpiresIn = 3600;
+        if (typeof refreshToken.userId === "string") {
+            const accessToken = makeJWT(refreshToken.userId, accessExpiresIn, config.secret);
+            res.status(200).json({
+                token: accessToken,
+            });
+        }
+        else {
+            throw new NotFoundError("User not found");
+        }
+    }
+    catch (err) {
+        next(err);
+    }
+}
+async function handlerRevokeToken(req, res, next) {
+    // Will not receive a body, but will have an Authorization header
+    try {
+        const refreshTokenId = getBearerToken(req);
+        await revokeToken(refreshTokenId);
+        res.status(204).end();
+    }
+    catch (err) {
+        next(err);
+    }
+}
 async function handlerAddNewChirp(req, res, next) {
     const parsedBody = req.body; // Will receive a chirp. The Authorization header will have a bearer token. Extract the user ID from that
     try {
-        let userId = "";
-        try {
-            const token = getBearerToken(req);
-            userId = validateJWT(token, config.secret);
-        }
-        catch (err) {
-            console.log(err);
-            throw new UnauthorizedError("Session expired. Please log in again");
-        }
+        const userId = validateAuthHeader(req);
         // Validation logic
         if (parsedBody.body.length > 140) {
             throw new BadRequestError("Chirp is too long. Max length is 140");
@@ -209,5 +241,16 @@ function errorHandler(err, req, res, next) {
         res.status(404).json({
             error: err.message
         });
+    }
+}
+// Quick helper functions
+function validateAuthHeader(req) {
+    try {
+        const token = getBearerToken(req);
+        return validateJWT(token, config.secret);
+    }
+    catch (err) {
+        console.log(err);
+        throw new UnauthorizedError("Session expired. Please log in again");
     }
 }

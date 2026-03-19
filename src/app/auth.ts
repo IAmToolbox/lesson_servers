@@ -7,6 +7,8 @@ import type { JwtPayload } from "jsonwebtoken";
 
 type Payload = Pick<JwtPayload, "iss" | "sub" | "iat" | "exp">;
 
+const { randomBytes } = await import("node:crypto"); // Why does THIS function get to be special??
+
 export async function hashPassword(password: string): Promise<string> {
     try {
         const hash = await argon2.hash(password);
@@ -62,4 +64,9 @@ export function getBearerToken(req: Request): string {
 
 
     return headerParts[1];
+}
+
+export function makeRefreshToken() {
+    const tokenBuffer = randomBytes(256);
+    return tokenBuffer.toString('hex');
 }
