@@ -5,8 +5,8 @@ import { Request, Response } from "express";
 import { config } from "../config.js";
 import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken, makeRefreshToken } from "./auth.js";
 
-import { createUser, getUserByEmail, resetUsers } from "../db/queries/users.js"
-import { createNewChirp, getAllChirps, getChirpById } from "../db/queries/chirps.js";
+import { createUser, updateUser, getUserByEmail, resetUsers } from "../db/queries/users.js"
+import { createNewChirp, getAllChirps, getChirpById, deleteChirp } from "../db/queries/chirps.js";
 import { createRefreshToken, getRefreshTokenById, revokeToken } from "../db/queries/refresh_tokens.js";
 
 type Middleware = (req: Request, res: Response, next: Function) => void;
@@ -49,7 +49,9 @@ app.get("/api/healthz", (req: Request, res: Response) => {
 app.post("/api/chirps", handlerAddNewChirp);
 app.get("/api/chirps", handlerGetAllChirps);
 app.get("/api/chirps/:chirpId", handlerGetChirpById);
+app.delete("/api/chirps/:chirpId", handlerDeleteChirp);
 app.post("/api/users", handlerAddUser);
+app.put("/api/users", handlerUpdateUser);
 app.post("/api/login", handlerLogin);
 app.post("/api/refresh", handlerRefreshUser);
 app.post("/api/revoke", handlerRevokeToken);
@@ -104,6 +106,18 @@ async function handlerAddUser(req: Request, res: Response, next: Function) {
         const hashedPassword = await hashPassword(parsedBody.password);
         const createdUser = await createUser({ email: parsedBody.email, hashedPassword: hashedPassword });
         res.status(201).json(createdUser);
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function handlerUpdateUser(req: Request, res: Response, next: Function) {
+    const parsedBody = req.body;
+    try {
+        const userId = validateAuthHeader(req);
+        const hashedPassword = await hashPassword(parsedBody.password);
+        const updatedUser = await updateUser(userId, parsedBody.email, hashedPassword);
+        res.status(200).json(updatedUser);
     } catch (err) {
         next(err);
     }
@@ -236,6 +250,30 @@ async function handlerGetChirpById(req: Request, res: Response, next: Function) 
             throw new NotFoundError("Chirp not found");
         }
         res.status(200).json(chirp);
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function handlerDeleteChirp(req: Request, res: Response, next: Function) {
+    const { chirpId } = req.params;
+    // Same type guard as before
+    if (typeof chirpId !== "string") {
+        throw new BadRequestError("Invalid chirp ID");
+    }
+    try {
+        const userId = await validateAuthHeader(req);
+        const chirp = await getChirpById(chirpId);
+        if (!chirp) {
+            throw new NotFoundError("Chirp not found");
+        }
+        if (chirp.userId !== userId) {
+            throw new ForbiddenError("Attempted to delete someone else's chirp");
+        }
+
+        await deleteChirp(chirpId);
+
+        res.status(204).end();
     } catch (err) {
         next(err);
     }
