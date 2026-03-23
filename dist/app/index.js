@@ -2,7 +2,7 @@
 import express from "express";
 import { config } from "../config.js";
 import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken, makeRefreshToken } from "./auth.js";
-import { createUser, updateUser, getUserByEmail, resetUsers } from "../db/queries/users.js";
+import { createUser, updateUser, getUserByEmail, upgradeChirpyRed, resetUsers } from "../db/queries/users.js";
 import { createNewChirp, getAllChirps, getChirpById, deleteChirp } from "../db/queries/chirps.js";
 import { createRefreshToken, getRefreshTokenById, revokeToken } from "../db/queries/refresh_tokens.js";
 // Custom error definitions go here
@@ -40,6 +40,7 @@ app.get("/api/chirps/:chirpId", handlerGetChirpById);
 app.delete("/api/chirps/:chirpId", handlerDeleteChirp);
 app.post("/api/users", handlerAddUser);
 app.put("/api/users", handlerUpdateUser);
+app.post("/api/polka/webhooks", handlerUpgradeChirpyRed);
 app.post("/api/login", handlerLogin);
 app.post("/api/refresh", handlerRefreshUser);
 app.post("/api/revoke", handlerRevokeToken);
@@ -106,6 +107,22 @@ async function handlerUpdateUser(req, res, next) {
         next(err);
     }
 }
+async function handlerUpgradeChirpyRed(req, res, next) {
+    const parsedBody = req.body; // Will receive a webhook request, with an event and some data
+    try {
+        if (parsedBody.event !== "user.upgraded") {
+            res.status(204).end();
+        }
+        const upgradedUser = await upgradeChirpyRed(parsedBody.data.userId);
+        if (!upgradedUser) {
+            throw new NotFoundError("User not found");
+        }
+        res.status(204).end();
+    }
+    catch (err) {
+        next(err);
+    }
+}
 async function handlerLogin(req, res, next) {
     const parsedBody = req.body; // Will receive an email and a password
     try {
@@ -128,6 +145,7 @@ async function handlerLogin(req, res, next) {
                 createdAt: user.createdAt,
                 updatedAt: user.updatedAt,
                 email: user.email,
+                isChirpyRed: user.isChirpyRed,
                 token: accessToken,
                 refreshToken: refreshToken.token,
             };

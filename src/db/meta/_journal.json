@@ -29,6 +29,13 @@
       "when": 1773885382152,
       "tag": "0003_sudden_vivisector",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774239201856,
+      "tag": "0004_white_mandroid",
+      "breakpoints": true
     }
   ]
 }

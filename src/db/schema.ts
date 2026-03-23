@@ -1,6 +1,6 @@
 // Schema file for the Chirpy database
 
-import { pgTable, timestamp, varchar, uuid, text } from "drizzle-orm/pg-core";
+import { pgTable, timestamp, varchar, uuid, text, boolean } from "drizzle-orm/pg-core";
 import { type InferInsertModel } from "drizzle-orm";
 
 export const users = pgTable("users", {
@@ -9,6 +9,7 @@ export const users = pgTable("users", {
     updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
     email: varchar("email", { length: 256 }).unique().notNull(),
     hashedPassword: varchar("hashed_password", { length: 256 }).notNull().default("unset"),
+    isChirpyRed: boolean("is_chirpy_red").default(false),
 });
 
 export const chirps = pgTable("chirps", {

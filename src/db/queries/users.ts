@@ -14,6 +14,7 @@ export async function createUser(user: NewUser): Promise<UserResponse> {
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,
         email: result.email,
+        isChirpyRed: result.isChirpyRed,
     };
 }
 
@@ -25,12 +26,19 @@ export async function updateUser(id: string, email: string, hashedPassword: stri
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,
         email: result.email,
+        isChirpyRed: result.isChirpyRed,
     };
 }
 
 // Query searching for a user by their email
 export async function getUserByEmail(email: string) {
     const [result] = await db.select().from(users).where(eq(users.email, email));
+    return result;
+}
+
+// Query the upgrade to Chirpy Red
+export async function upgradeChirpyRed(id: string) {
+    const [result] = await db.update(users).set({ updatedAt: new Date(), isChirpyRed: true }).where(eq(users.id, id)).returning();
     return result;
 }
 
