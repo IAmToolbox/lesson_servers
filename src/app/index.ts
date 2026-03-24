@@ -3,7 +3,7 @@
 import express from "express";
 import { Request, Response } from "express";
 import { config } from "../config.js";
-import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken, makeRefreshToken } from "./auth.js";
+import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken, getAPIKey, makeRefreshToken } from "./auth.js";
 
 import { createUser, updateUser, getUserByEmail, upgradeChirpyRed, resetUsers } from "../db/queries/users.js"
 import { createNewChirp, getAllChirps, getChirpById, deleteChirp } from "../db/queries/chirps.js";
@@ -133,6 +133,16 @@ async function handlerUpgradeChirpyRed(req: Request, res: Response, next: Functi
     try {
         if (parsedBody.event !== "user.upgraded") {
             res.status(204).end();
+        }
+        let APIKey = "";
+        try {
+            APIKey = getAPIKey(req);
+        } catch (err) {
+            throw new UnauthorizedError("Upgrade unsuccessful");
+        }
+
+        if (APIKey !== config.polkaKey) {
+            throw new UnauthorizedError("Upgrade unsuccessful");
         }
         const upgradedUser = await upgradeChirpyRed(parsedBody.data.userId);
         if (!upgradedUser) {

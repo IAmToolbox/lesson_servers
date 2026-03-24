@@ -1,7 +1,7 @@
 // Learning servers on Boot.dev oh me oh my
 import express from "express";
 import { config } from "../config.js";
-import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken, makeRefreshToken } from "./auth.js";
+import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken, getAPIKey, makeRefreshToken } from "./auth.js";
 import { createUser, updateUser, getUserByEmail, upgradeChirpyRed, resetUsers } from "../db/queries/users.js";
 import { createNewChirp, getAllChirps, getChirpById, deleteChirp } from "../db/queries/chirps.js";
 import { createRefreshToken, getRefreshTokenById, revokeToken } from "../db/queries/refresh_tokens.js";
@@ -112,6 +112,16 @@ async function handlerUpgradeChirpyRed(req, res, next) {
     try {
         if (parsedBody.event !== "user.upgraded") {
             res.status(204).end();
+        }
+        let APIKey = "";
+        try {
+            APIKey = getAPIKey(req);
+        }
+        catch (err) {
+            throw new UnauthorizedError("Upgrade unsuccessful");
+        }
+        if (APIKey !== config.polkaKey) {
+            throw new UnauthorizedError("Upgrade unsuccessful");
         }
         const upgradedUser = await upgradeChirpyRed(parsedBody.data.userId);
         if (!upgradedUser) {

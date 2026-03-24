@@ -66,6 +66,17 @@ export function getBearerToken(req: Request): string {
     return headerParts[1];
 }
 
+export function getAPIKey(req: Request): string {
+    const authHeader = req.get('Authorization');
+    if (authHeader === undefined) {
+        throw new Error(`Authorization header missing/malformed: ${authHeader}`);
+    }
+    const headerParts = authHeader.split(" ");
+
+
+    return headerParts[1];
+}
+
 export function makeRefreshToken() {
     const tokenBuffer = randomBytes(256);
     return tokenBuffer.toString('hex');
