@@ -6,7 +6,7 @@ import { config } from "../config.js";
 import { hashPassword, checkPasswordHash, makeJWT, validateJWT, getBearerToken, getAPIKey, makeRefreshToken } from "./auth.js";
 
 import { createUser, updateUser, getUserByEmail, upgradeChirpyRed, resetUsers } from "../db/queries/users.js"
-import { createNewChirp, getAllChirps, getChirpById, deleteChirp } from "../db/queries/chirps.js";
+import { createNewChirp, getAllChirps, getAllChirpsFromAuthor, getChirpById, deleteChirp } from "../db/queries/chirps.js";
 import { createRefreshToken, getRefreshTokenById, revokeToken } from "../db/queries/refresh_tokens.js";
 
 type Middleware = (req: Request, res: Response, next: Function) => void;
@@ -262,9 +262,15 @@ async function handlerAddNewChirp(req: Request, res: Response, next: Function) {
 
 async function handlerGetAllChirps(req: Request, res: Response, next: Function) {
     try {
-        const chirps = await getAllChirps();
-        res.status(200).json(chirps);
-        next();
+        const authorId = validateAuthorIdQuery(req); // Query may or may not be there
+        const sort = validateSortQuery(req); // Query may or may not also be there this is so complex man
+        if (authorId) {
+            const authorChirps = await getAllChirpsFromAuthor(authorId, sort);
+            res.status(200).json(authorChirps);
+        } else {
+            const chirps = await getAllChirps(sort);
+            res.status(200).json(chirps);
+        }
     } catch (err) {
         next(err);
     }
@@ -347,5 +353,23 @@ function validateAuthHeader(req: Request) {
     } catch (err) {
         console.log(err);
         throw new UnauthorizedError("Session expired. Please log in again");
+    }
+}
+
+function validateAuthorIdQuery(req: Request) {
+    const rawQuery = req.query.authorId;
+    if (typeof rawQuery === "string") {
+        return rawQuery;
+    } else {
+        return undefined;
+    }
+}
+
+function validateSortQuery(req: Request) {
+    const rawQuery = req.query.sort;
+    if (typeof rawQuery === "string") {
+        return rawQuery;
+    } else {
+        return undefined;
     }
 }

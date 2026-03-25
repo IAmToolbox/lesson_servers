@@ -2,7 +2,7 @@
 
 import { db } from "../index.js";
 import { NewChirp, chirps } from "../schema.js";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, desc } from "drizzle-orm";
 
 // Query the addition of a new chirp
 export async function createNewChirp(chirp: NewChirp) {
@@ -10,10 +10,28 @@ export async function createNewChirp(chirp: NewChirp) {
     return result;
 }
 
-// Query retrieval of all chirps in ascending order on when they were created
-export async function getAllChirps() {
-    const result = await db.select().from(chirps).orderBy(asc(chirps.createdAt));
-    return result;
+// Query retrieval of all chirps
+export async function getAllChirps(sort?: string) {
+    if (sort === "desc") {
+        const result = await db.select().from(chirps).orderBy(desc(chirps.createdAt));
+        return result;
+    } else {
+        const result = await db.select().from(chirps).orderBy(asc(chirps.createdAt));
+        return result;
+    }
+
+}
+
+// Query retrieval of all chirps by a single author
+export async function getAllChirpsFromAuthor(authorId: string, sort?: string) {
+    if (sort === "desc") {
+        const result = await db.select().from(chirps).where(eq(chirps.userId, authorId)).orderBy(desc(chirps.createdAt));
+        return result;
+    } else {
+        const result = await db.select().from(chirps).where(eq(chirps.userId, authorId)).orderBy(asc(chirps.createdAt));
+        return result;
+    }
+
 }
 
 // Query retrieval of a single chirp by ID
